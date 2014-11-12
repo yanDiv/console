@@ -1,4 +1,3 @@
-
 ;(function(){
 	'use strict';
 
@@ -15,25 +14,12 @@
 		method = ['log','warn','info'],
 		
 		slice = method.slice,
+		defaultConfig = {},
 
-		wrap,
-		shine = {
+		StyleSheet = {},
+		Handler = {};
 
-		},
-		tmpl = (['<div class="{{namespace}}console-inner {{namespace}}console-{{type}} {{namespace}}console-{{style}}">',
-					'<div class="{{namespace}}console-col-left">' ,
-					'<i class="{{namespace}}console-icon {{namespace}}console-icon-{{type}}">{{count}}</i>',
-					'<span class="{{namespace}}console-message">{{message}}</span>' ,
-					'<span class="{{namespace}}console-count"></span>' ,
-					'</div>' ,
-					'<div class="{{namespace}}console-col-right">' ,
-					//'<span class="{{namespace}}console-route">{{route}}</span>',
-					'<span class="{{namespace}}console-coord">(line:{{row}},column:{{col}})</span>' ,
-					'<span class="{{namespace}}console-file">{{file}}</span>' ,
-					'</div>',
-				'</div>'
-				]).join('\n');
-
+	//浅copy
 	function extend( dest,src ){
 		var hOwn = hasOwn,
 			args = slice.call( arguments ),
@@ -65,35 +51,147 @@
 		return dest;
 	}
 
-	function renderTpl( tpl,data ){
-		var ret;
-		if( data ){
-			if( typeof tpl == 'string' ){
-				ret = tpl.replace(/{{(\w+)}}/g,function($1,$2){
-					var p = data[ $2 ];
+	function throttle( hdl,t,ctx,clt ){
+		var timer,
+			handle,
+			first;
 
-					return p === undefined ? '' : p;
-				});
+		handle = function(){
+			var args = arguments;
+
+			if( timer ){
+				global.clearTimeout( timer ); 
+				clt && clt.apply( ctx,args );
+			}
+			else{
+				first = args;
+			}
+
+			timer = global.setTimeout(function(){
+				global.clearTimeout( timer );
+				hdl.apply( ctx,first );
+			},t || 200);
+
+			return this;
+		}
+		handle._expo = 'throttle';
+
+		return handle;
+	}
+
+	Handler = (function(){
+		var Handler,
+			tpl;
+
+		tpl = {
+			message: parseTpl((function(){
+			/*
+				<div class="{{namespace}}console-inner {{namespace}}console-{{type}} {{namespace}}console-{{style}}">
+					<div class="{{namespace}}console-col-left">
+						<i class="{{namespace}}console-icon">{{count}}</i>
+						<span class="{{namespace}}console-message">{{message}}</span>
+						<span class="{{namespace}}console-count"></span>
+					</div>
+					<div class="{{namespace}}console-col-right">
+						<span class="{{namespace}}console-coord">(line:{{row}},column:{{col}})</span>
+						<span class="{{namespace}}console-file">{{file}}</span>
+					</div>
+				</div>
+			*/
+			}).toString().replace(/[\t\r\n]+/g,'')),
+			toolbar: parseTpl((function(){
+			/*
+				<div class="{{namespace}}console-toolbar">
+					<a class="{{namespace}}console-btn">全部</a>
+					<a class="{{namespace}}console-btn">Log</a>
+					<a class="{{namespace}}console-btn">Info</a>
+					<a class="{{namespace}}console-btn">Wran</a>
+					<a class="{{namespace}}console-btn">清除</a>
+				</div>
+			*/	
+			}).toString().replace(/[\t\r\n]+/g,''))
+		}
+
+		function parseTpl( tpl ){
+			return (/\/\*([\s\S]+)\*\//g).exec( tpl )[1];
+		}
+
+
+		Handler = {
+			init: function( config ){
+				var doc = global.document,
+					handler = doc.createElement('div');
+
+				this._handler = handler;
+				this._htmlCache = [];
+
+				this.config = config;
+
+				handler.className = config.namespace + 'console-wrap';
+				doc.body.appendChild( handler );
+				handler.style.display = 'block';
+
+				return this;
+			},
+			render: function( tpl,data ){
+				var ret;
+				if( data ){
+					if( typeof tpl == 'string' ){
+						ret = tpl.replace(/{{([\w_\-]+)}}/g,function( $1,$2 ){
+							var p = data[ $2 ];
+
+							return p === undefined ? '' : p;
+						});
+
+						ret = ret.replace(/{{#([\w_\-])+}}([^{]{2}){{\/[\w_\-]+}}/g,function( $1,$2 ){
+							debugger;
+						});
+					}
+
+					return ret;
+				}
+			},
+			print: function( data ){
+				var html = this.render( tpl.message,data );
+
+				this.html( html );
+				return this;
 			}
 		}
 
-		return ret ? ret : tpl;
-	}
-		
-	function buildStyleSheet( ns ){
-		var style,
-			sheet,
-			doc = global.document,
-			head = doc.head;
+		Handler.html = throttle( function( html ){
+			var cache;
 
-		style = doc.createElement('style');
-		sheet = (function(){			
-			var sheet = (function(){
-				/*
+			this._htmlCache.unshift( html );
+			html = this._htmlCache.join('');
+			cache = this._handler.innerHTML + html;
+
+			this._handler.innerHTML = html;
+
+			this._htmlCache = [];
+
+		},200,Handler,function( html ){
+			this._htmlCache.push( html );
+		});
+
+		return Handler;
+	})();
+
+	StyleSheet = (function(){
+		var StyleSheet,
+			rthunk = /((\s*\.([\w_\-]+)\s*)+)({[\r\n]?[^}]*})/g,
+			rcls = /([\w_\-]+)+/g,
+			rbody = /[\r\n\t]*([\w+\-]+)\:([\w+\-]+)[\r\n\t]*/g,
+			defaultSheet;
+
+		defaultSheet = (function(){
+			/*
 				.console-wrap{
 					position:fixed;
 					right:0;
 					top:0;
+					left:0;
+					bottom:0;
 					display:none;
 					overflow-x:hidden;
 					font-size:12px;
@@ -113,13 +211,16 @@
 					color: #ffffff;
 					top:-1px;
 				}
+				.console-log .console-icon{
+					background-color: #dddddd;
+				}
 				.console-icon-log{
 					background-color: #dddddd;
 				}
-				.console-icon-warn{
+				.console-warn .console-icon{
 					background-color:orange;
 				}
-				.console-icon-info{
+				.console-info .console-icon{
 					background-color:blue;
 				}
 				.console-even{
@@ -127,244 +228,228 @@
 				}
 				.console-col-left{
 					float:left;
+					margin-right:50px;
 				}
 				.console-col-right{
 					float: right;
 				}
 				.console-message{
-					
+					margin:0 5px;
 				}
-				*/
-			}).toString(),
-			list = [],
-			namespace = ns;
-
-			sheet = sheet.replace(/[\r\n\t]*/g,'');
-			sheet.replace(/\.([\w_\-]+)\s*{[\r\n]?[^}]*}/g,function(a,b,c){
-				var reg = new RegExp(b);
-				list.push(
-					a.replace(reg,function($1){
-						return namespace + b;
-					})
-				);
-			});
-
-			return list.join('\n');			
-		})();
-		
-		style.innerHTML = sheet;
-		head.appendChild( style );
-	}
-
-	function throttle( hdl,t,ctx,clt ){
-		var timer,
-			toStr = hdl.toString,
-			handle;
-
-		handle = function(){
-			timer ? global.clearTimeout( timer ) : 1;
-
-			timer = global.setTimeout(function(){
-				global.clearTimeout( timer );
-				hdl.call( ctx,ret );
-			},t || 200);
-		}
-		return handle._expo = 'throttle';
-	}
-
-	function buildMethod( config ){
-		var cfg = config || this.config,
-			t = cfg.type,
-			log;
-
-		return extend( {}, t == 'console' ? 
-			(function(){
-				var list = method,
-					len = list.length,
-					old = oldConsole,
-					p,
-					a = old.log.apply,
-					apply = Function.prototype.apply;
-					log = {};
-
-				while(len--){
-					p = list[ len ];
-					log[ p ] = function(){
-						a ? old[ p ].apply( old,arguments ) : apply.call( old[p],old,argument );
-
-					}
+				.console-file{
+					margin-left:5px;
 				}
-				
-				return log;
-			})() : (function(){
-				var wrap = cfg.wrap,
-					tpl = tmpl,
-					cache = wrap.innerHTML;
+			*/
+		}).toString().replace(/[\t\n\r]+/g,'');
 
-				return {
-					log: function( msg ){
-						var html = renderTpl( tpl,msg);
-						
-						cache += html;
-						wrap.innerHTML = cache;
+		StyleSheet = {
+			init: function( config ){
+				var doc = global.document,
+					styleHandler;
 
-						return this;
-					},
-					info: function( msg ){
-						return this.log.apply(this,arguments);
-					},
-					warn: function( msg ){
-						return this.log.apply(this,arguments);
-					},
-					error: function( msg ){
-						return this.log.apply(this,arguments);
-					}
-				}
-			})()
-		);
-	}
+				config.namespace = config.namespace || '';
 
-	function getOutputInfo(){
-		try{
-			throw new Error;
-		}
-		catch( e ){
+				this.config = config;
+				this.namespace = config.namespace;
+				this.position = config.position;
+				this.styleHandler = styleHandler = doc.createElement('style');
 
-			if( outputHandle ){
-				return outputHandle( e );
-			}
-			return ( outputHandle = (function(){
-				var ua = global.navigator.userAgent;
+				styleHandler.setAttribute('data-namespace',this.namespace || 'console');
 
-				return buildHandle(
-					/chrome/gi.test( ua ) && 'chrome' ||
-					/safari/gi.test( ua ) && 'safari' || 
-					/firefox/gi.test( ua ) && 'firefox' 
-				);
+				this.html( this.parseSheet( config.sheet || defaultSheet ));
 
-				function buildHandle( tag ){
-					var idx;
-					switch( tag ){
-						case 'safari':
-							idx = 2;
+				doc.head.appendChild( styleHandler );
 
-							return (function(){
-								var err = new Error();
-								
-								if( err.stack ){
-									return ret;
-								}
-								else{
-									return function( e ){
-										var s = e.stack.match(/.*\n+/g),
-											i = s[ idx ].match(/\/{1}([^/].*)\)?/),
-											info = i[ i.length - 1 ].split('/'),
-											msg = info[ info.length - 1].split(':');
+				return this;
+			},
+			html: function( html ){
+				var style = this.styleHandler;
 
-										return {
-											host : info.shift(),
-											route : info.length > 1 ?info.join(''): '',
-											file : msg[ 0 ],
-											row : msg[ 1 ],
-											col : msg[ 2 ]
-										}	
-									}
-								}	
-							})();
-						case 'firefox':
-						case 'chrome':
-							idx = 2;
-							return ret;					
-					}
-					
-					function ret( e ){
-						var s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
-							i = s[ idx ].match(/\/{1}([^/].*)\)?/),
-							info = i[ i.length - 1 ].split('/'),
-							msg = info.pop().split(':');
+				style.innerHTML = html;
 
-						return {
-							host : info.shift(),
-							route : info.length > 1 ? (info.join('')): '',
-							file : msg[ 0 ],
-							row : msg[ 1 ],
-							col : msg[ 2 ]
-						}							
-					}
-				}
-			})())(e);
-		}
-	}
+				return this;
+			},
+			parseSheet: function( style ){
+				var sheet = [],
+					self = this,
+					namespace = this.namespace,
+					rt = rthunk,
+					rc = rcls;
 
-	function consoleWrap( key ){
-		return function( msg,force ){
-			var info;
+				style.replace( rt,function($1,$2){
+					var p,
+						n;
 
-			if( !this.config.debug ){
-				if( force === undefined ){
-					return this;
-				}
-				if( !force ){
-					return this;
-				}
+					p = $2.replace(rc,function( $3,$4 ){
+						return namespace + $4;
+					});
+
+					n = $1.replace( $2,p );
+					$2 == '.console-wrap' ? 
+						sheet.push( self._fixPosition( n ) ) :
+						sheet.push( n );
+				});
+
+				return sheet.join('');
+			},
+			_fixPosition: function( ctx ){
+				var pos = this.position;
+
+				return ctx.replace(rbody,function(a,b,c){
+					var p = pos[ b ];
+					return p === undefined ? a : b + ':' + p; 
+				});
 			}
 
-			info = getOutputInfo();
-			info.style = this.format();
-			info.type = key;
-			info.count = this.count;
-			info.message = msg;
-			info.namespace = this.config.namespace;
+		};
 
-			this[key + 'Context'].push( info );
-			this._printHandler[ key ]( info );
-
-			return this;
-		}
-	}
+		return StyleSheet;
+	})();
 
 	console = {
-		init: function( cfg ){
-			var doc = global.document;
-		
-			cfg = extend( {},{
-				type: 'console',
-				namespace: '',
-				wrap: doc.createElement('div')
-			},cfg );
+		init: function( config ){
+			var defaultConfig = {
+					debug: true,
+					namespace: 'Olivia',
+					position: 'bottom right'
+				},
+				namespace;
 
-			if( !oldConsole ){
-				cfg.type = 'dom';
-			}
+			config = extend({},defaultConfig,config);
+			namespace = config.namespace;
 
-			this.config = cfg;
+			config.position = this._tranformPosition( config.position );
+			config.namespace += namespace ? '-' : '';
+			
+			this.config = config;
+			this._handleInfo = undefined;
+			this._count = 0;
 
-			cfg.namespace += cfg.namespace == '' ? '' : '-';
-			buildStyleSheet( cfg.namespace );
+			StyleSheet.init({
+				namespace: config.namespace,
+				position: config.position
+			});
 
-			cfg.wrap.className = cfg.namespace + 'console';
-			doc.body.appendChild( cfg.wrap );
-
-			cfg.wrap.style.display = 'block';
-
-			this.infoContext = [];
-			this.logContext = [];
-			this.warnContext = [];
-			this.count = 0;
-
-			this._printHandler = buildMethod.call( this,cfg );
+			Handler.init({
+				namespace: config.namespace
+			});
 
 			return this;
 		},
-		format: function(){
-			this.count++;
-			return this.count % 2 == 0 ? 'odd' : 'even';
+		_tranformPosition: function( position ){
+			var list = position.match(/\w+/g),
+				tag = ['left','right','top','bottom'],
+				i = tag.length,
+				pos = {};
+
+			while( i-- ){
+				pos[ tag[i] ] = 'auto';
+			}	
+
+			i = list.length;
+			while( i-- ){
+				pos[ list[i] ] = 0;
+			}
+
+			return pos;
 		},
-		log: consoleWrap('log'),
-		info: consoleWrap('info'),
-		warn: consoleWrap('warn'),
-		clear: function( type ){
-			type = type || undefined;
+		outputInfo: function(){
+			var self = this,
+				outputHandle = this._handleInfo;
+
+			try{
+				throw new Error;
+			}
+			catch( e ){
+				if( outputHandle ){
+					return outputHandle( e );
+				}
+				return ( self._handleInfo = (function(){
+					var ua = global.navigator.userAgent;
+
+					return buildHandle(
+						/chrome/gi.test( ua ) && 'chrome' ||
+						/safari/gi.test( ua ) && 'safari' || 
+						/firefox/gi.test( ua ) && 'firefox' 
+					);
+
+					function buildHandle( tag ){
+						var idx;
+						switch( tag ){
+							case 'safari':
+								idx = 2;
+
+								return (function(){
+									var err = new Error();
+									
+									if( err.stack ){
+										return ret;
+									}
+									else{
+										return function( e ){
+											var s = e.stack.match(/.*\n+/g),
+												i = s[ idx ].match(/\/{1}([^/].*)\)?/),
+												info = i[ i.length - 1 ].split('/'),
+												msg = info[ info.length - 1].split(':');
+
+											return {
+												host : info.shift(),
+												route : info.length > 1 ?info.join(''): '',
+												file : msg[ 0 ],
+												row : msg[ 1 ],
+												col : msg[ 2 ]
+											}	
+										}
+									}	
+								})();
+							case 'firefox':
+							case 'chrome':
+								idx = 2;
+								return ret;					
+						}
+						
+						function ret( e ){
+							var s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
+								i = s[ idx ].match(/\/{1}([^/].*)\)?/),
+								info = i[ i.length - 1 ].split('/'),
+								msg = info.pop().split(':');
+
+							return {
+								host : info.shift(),
+								route : info.length > 1 ? (info.join('')): '',
+								file : msg[ 0 ],
+								row : msg[ 1 ],
+								col : msg[ 2 ]
+							}							
+						}
+					}
+				})())(e);
+			}
+		},
+		messageStyle: function(){
+			return (( this._count++ ) % 2) == 0 ? 'odd' : 'even';
+		},
+		output: function( key,message,force ){
+			var info,
+				config;
+
+			if( !force ){
+				if( !this.config.debug ){
+					return this;
+				}
+			}
+
+			info = this.outputInfo();
+			config = this.config;
+			info.style = this.messageStyle();
+			info.count = this._count;
+			info.type = key;
+			info.message = message;
+			info.namespace = config.namespace;
+
+			Handler.print(info);
+
+			return this;
 		}
 	}
 
