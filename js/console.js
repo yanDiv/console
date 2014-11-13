@@ -64,6 +64,7 @@
 
 			timer = global.setTimeout(function(){
 				global.clearTimeout( timer );
+				timer = null;
 				hdl.apply( ctx,first );
 			},t || 200);
 
@@ -81,7 +82,7 @@
 		tpl = {
 			message: parseTpl((function(){
 			/*
-				<div class="{{namespace}}console-inner {{namespace}}console-{{type}} {{namespace}}console-{{style}}">
+				<div class="{{namespace}}console-output {{namespace}}console-{{type}} {{namespace}}console-{{style}}">
 					<div class="{{namespace}}console-col-left">
 						<i class="{{namespace}}console-icon">{{count}}</i>
 						<span class="{{namespace}}console-message">{{message}}</span>
@@ -97,11 +98,10 @@
 			toolbar: parseTpl((function(){
 			/*
 				<div class="{{namespace}}console-toolbar">
-					<a class="{{namespace}}console-btn">全部</a>
-					<a class="{{namespace}}console-btn">Log</a>
-					<a class="{{namespace}}console-btn">Info</a>
-					<a class="{{namespace}}console-btn">Wran</a>
-					<a class="{{namespace}}console-btn">清除</a>
+					<a data-type="{{namespace}}console-log" class="{{namespace}}console-btn">Log</a>
+					<a data-type="{{namespace}}console-info" class="{{namespace}}console-btn">Info</a>
+					<a data-type="{{namespace}}console-warn" class="{{namespace}}console-btn">Wran</a>
+					<a data-type="{{namespace}}console-clear" class="{{namespace}}console-btn">清除</a>
 				</div>
 			*/	
 			}).toString().replace(/[\t\r\n]+/g,''))
@@ -115,16 +115,34 @@
 		Handler = {
 			init: function( config ){
 				var doc = global.document,
-					handler = doc.createElement('div');
+					handler = doc.createElement('div'),
+					bar = doc.createElement( 'div' ),
+					inner = doc.createElement( 'div' );
 
 				this._handler = handler;
+				this._bar = bar;
+				this._inner = inner;
 				this._htmlCache = [];
 
 				this.config = config;
 
-				handler.className = config.namespace + 'console-wrap';
+				handler.className = config.namespace + 'console-wrap' + ' ' + config.namespace + 'console' + config.position; 
+				bar.className = config.namespace + 'console-toolbar-wrap';
+				inner.className =config.namespace + 'console-inner';
+
+
+
+				bar.innerHTML = this.render( tpl.toolbar,{
+					namespace: config.namespace
+				});
+
+				handler.appendChild( bar );
+				handler.appendChild( inner );
+
 				doc.body.appendChild( handler );
 				handler.style.display = 'block';
+
+				this.bindEvt();
 
 				return this;
 			},
@@ -139,11 +157,56 @@
 						});
 
 						ret = ret.replace(/{{#([\w_\-])+}}([^{]{2}){{\/[\w_\-]+}}/g,function( $1,$2 ){
-							debugger;
+							//debugger;
 						});
 					}
 
 					return ret;
+				}
+			},
+			bindEvt: function(){
+				var inner = this._bar,
+					self = this,
+					namespace = this.config.namespace;
+
+				inner.addEventListener('click',function(e){
+					var target = e.target,
+						ctrl = target.getAttribute('data-type'),
+						method;
+
+					if( !ctrl ){
+						return;
+					}
+
+					ctrl = ctrl.split('-');
+					ctrl = ctrl[ ctrl.length - 1 ];
+
+					method = self.ctrlEvt[ctrl];
+					method && method.call( self,e );
+					
+				},false);
+			},
+			ctrlEvt: {
+				log: function(e){
+
+				},
+				info: function(e){
+
+				},
+				warn: function(e){
+
+				},
+				clear: function(e){
+					Output.reset();
+					this._inner.innerHTML = '';
+				}
+			},
+			hide: function(){
+
+			},
+			show: function( key ){
+				if( key === undefined ){
+
 				}
 			},
 			print: function( data ){
@@ -159,9 +222,9 @@
 
 			this._htmlCache.unshift( html );
 			html = this._htmlCache.join('');
-			cache = this._handler.innerHTML + html;
+			cache = this._inner.innerHTML + html;
 
-			this._handler.innerHTML = html;
+			this._inner.innerHTML = cache;
 
 			this._htmlCache = [];
 
@@ -183,20 +246,73 @@
 			/*
 				.console-wrap{
 					position:fixed;
-					right:0;
-					top:0;
-					left:0;
-					bottom:0;
 					display:none;
 					overflow-x:hidden;
 					font-size:12px;
 					color:#5b5b5b;
 					letter-space:1px;
+					width:450px;
+				}
+				.console-left-top{
+					left:0;
+					top:0;
+					width:320px;
+				}
+				.console-right-top{
+					right:0;
+					top:0;
+					width:320px;
+				}
+				.console-left-bottom{
+					left:0;
+					bottom:0;
+					width:320px;
+				}
+				.console-right-bottom{
+					right:0;
+					bottom:0;
+					width:320px;
+				}
+				.console-top{
+					left:0;
+					right:0;
+					top:0;
+					width:100%;
+				}
+				.console-bottom{
+					left:0;
+					right:0;
+					bottom:0;
+					width:100%;
+				}
+				.console-toolbar{
+					position:absolute;
+					left:0;
+					top:0;
+					right:0px;
+					border-top:1px solid #dddddd;
+					border-bottom:1px solid #dddddd;
+					padding:15px 10px;
+					box-shadow: 0 0 10px #dfdfdf;
 				}
 				.console-inner{
+					margin-top:46px;
+					overflow:scroll;
+					max-height:300px;
+				}
+				.console-btn{
+					background-color: #dddddd;
+					color:#ffffff;
+					margin-right:10px;
+					padding:7px 15px;
+					border-radius:3px;
+					cursor: pointer;
+					font-size:14px;
+				}s
+				.console-output{
 					overflow:hidden;
 					padding:10px;
-					border-top:1px solid #dddddd;
+					border-bottom:1px solid #dddddd;
 				}
 				.console-icon{
 					position:relative;
@@ -280,9 +396,10 @@
 					});
 
 					n = $1.replace( $2,p );
-					$2 == '.console-wrap' ? 
-						sheet.push( self._fixPosition( n ) ) :
-						sheet.push( n );
+					// $2 == '.console-wrap' ? 
+					// 	sheet.push( self._fixPosition( n ) ) :
+					// 	sheet.push( n );
+					sheet.push( n );
 				});
 
 				return sheet.join('');
@@ -312,9 +429,15 @@
 
 				this._count = 0;
 				this._handleInfo = undefined;
+				this._cache = {};
 				this._method = ['log','info','warn'];
 
 				this.build();
+				return this;
+			},
+			reset: function(){
+				this._count = 0;
+				this._cache = {};
 				return this;
 			},
 			build: function(){
@@ -468,7 +591,8 @@
 							
 							function ret( e ){
 								var s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
-									i = s[ idx ].match(/\/{1}([^/].*)\)?/),
+									index = idx < s.length ? idx : idx - 1,
+									i = s[ index ].match(/\/{1}([^/].*)\)?/),
 									info = i[ i.length - 1 ].split('/'),
 									msg = info.pop().split(':');
 
@@ -501,19 +625,19 @@
 			config = extend({},defaultConfig,config);
 			namespace = config.namespace;
 
-			config.position = this._tranformPosition( config.position );
+			config.position = '-' + config.position.replace(/\s+/g,'-');
 			config.namespace += namespace ? '-' : '';
 			
 			this.config = config;
 			this._count = 0;
 
 			StyleSheet.init({
-				namespace: config.namespace,
-				position: config.position
+				namespace: config.namespace
 			});
 
 			Handler.init({
-				namespace: config.namespace
+				namespace: config.namespace,
+				position: config.position
 			});
 
 			Output.init({
