@@ -82,7 +82,7 @@
 		tpl = {
 			message: parseTpl((function(){
 			/*
-				<div class="{{namespace}}console-output {{namespace}}console-{{type}} {{namespace}}console-{{style}}">
+				<div data-type="{{namespace}}console-{{type}}" class="{{namespace}}console-output {{namespace}}console-{{type}} {{namespace}}console-{{style}}">
 					<div class="{{namespace}}console-col-left">
 						<i class="{{namespace}}console-icon">{{count}}</i>
 						<span class="{{namespace}}console-message">{{message}}</span>
@@ -100,8 +100,9 @@
 				<div class="{{namespace}}console-toolbar">
 					<a data-type="{{namespace}}console-log" class="{{namespace}}console-btn">Log</a>
 					<a data-type="{{namespace}}console-info" class="{{namespace}}console-btn">Info</a>
-					<a data-type="{{namespace}}console-warn" class="{{namespace}}console-btn">Wran</a>
+					<a data-type="{{namespace}}console-warn" class="{{namespace}}console-btn">Warn</a>
 					<a data-type="{{namespace}}console-clear" class="{{namespace}}console-btn">清除</a>
+					<a data-type="{{namespace}}console-form" class="{{namespace}}console-btn">隐藏</a>
 				</div>
 			*/	
 			}).toString().replace(/[\t\r\n]+/g,''))
@@ -111,6 +112,28 @@
 			return (/\/\*([\s\S]+)\*\//g).exec( tpl )[1];
 		}
 
+		function ctrlEvtHigh( key ){
+			
+			return function( e ){
+				var tar = e.target,
+					cls = tar.className.replace(/\s+$/,''),
+					name = this.config.namespace + 'cur',
+					tag = this._ctrlEvtTag;
+				
+				if( !tag[ key ] ){
+					this.filte( key );
+					this.reset();
+					tag[ key ] = true;
+					tar.className = cls + ' ' + name;
+				}
+				else{
+					this.filte();
+					tag[ key ] = false;
+					tar.className = cls.replace(name,'');
+				}
+
+			}
+		}
 
 		Handler = {
 			init: function( config ){
@@ -123,6 +146,11 @@
 				this._bar = bar;
 				this._inner = inner;
 				this._htmlCache = [];
+				this._ctrlEvtTag = {
+					log: false,
+					info: false,
+					warn: false
+				};
 
 				this.config = config;
 
@@ -153,7 +181,7 @@
 						ret = tpl.replace(/{{([\w_\-]+)}}/g,function( $1,$2 ){
 							var p = data[ $2 ];
 
-							return p === undefined ? '' : p;
+							return p === undefined ? '' : p === null ? 'null' : p;
 						});
 
 						ret = ret.replace(/{{#([\w_\-])+}}([^{]{2}){{\/[\w_\-]+}}/g,function( $1,$2 ){
@@ -187,27 +215,86 @@
 				},false);
 			},
 			ctrlEvt: {
-				log: function(e){
-
-				},
-				info: function(e){
-
-				},
-				warn: function(e){
-
-				},
+				log: ctrlEvtHigh('log'),
+				info: ctrlEvtHigh('info'),
+				warn: ctrlEvtHigh('warn'),
 				clear: function(e){
 					Output.reset();
 					this._inner.innerHTML = '';
-				}
-			},
-			hide: function(){
+				},
+				form: function(){
+					var tag = false;
+					return function( e ){
+						var tar = e.target,
+							cls = tar.className.replace(/\s+$/,''),
+							name = this.config.namespace + 'cur';
+					
 
-			},
-			show: function( key ){
-				if( key === undefined ){
+						if( tag ){
+							tar.innerHTML = '隐藏';
+							tar.className = cls.replace(name,'');
+							this._inner.style.display = 'block';
+							tag = false;
+						}
+						else{
+							tar.innerHTML = '显示';
+							this._inner.style.display = 'none';
+							tar.className = cls + ' ' + name;
+							tag = true;
+						}
 
+					}
+				}()
+			},
+			reset: function(){
+				var list = ['log','info','warn'],
+					len = list.length,
+					tag = this._ctrlEvtTag,
+					child = this._bar.childNodes[0].childNodes,
+					name = this.config.namespace + 'cur',
+					form = this.config.namespace + 'console-form',
+					point;
+
+				while( len-- ){
+					tag[ list[ len ] ] = false;
 				}
+
+				len = child.length;
+
+				while( len-- ){
+					point = child[ len ];
+					if( point.getAttribute('data-type') == form ){
+						continue;
+					}
+					point.className = point.className.replace(name,'');
+				}
+
+				return this;
+			},
+			filte: function( key ){
+				var inner = this._inner,
+					child = inner.childNodes,
+					len = child.length,
+					name = this.config.namespace + 'console-' + key,
+					point,
+					attr;
+
+				if( !key ){
+					while( len-- ){
+						child[ len ].style.display = 'block';
+					}
+				}
+				else{
+					while( len-- ){
+						point = child[ len ];
+						attr = point.getAttribute( 'data-type' );
+						attr == name ?
+							point.style.display = 'block' : 
+							point.style.display = 'none';
+					}
+				}
+				
+				return this;
 			},
 			print: function( data ){
 				var html = this.render( tpl.message,data );
@@ -252,6 +339,7 @@
 					color:#5b5b5b;
 					letter-space:1px;
 					width:450px;
+					min-height:46px;
 				}
 				.console-left-top{
 					left:0;
@@ -290,8 +378,8 @@
 					left:0;
 					top:0;
 					right:0px;
-					border-top:1px solid #dddddd;
-					border-bottom:1px solid #dddddd;
+					border-top:1px solid #ddd;
+					border-bottom:1px solid #ddd;
 					padding:15px 10px;
 					box-shadow: 0 0 10px #dfdfdf;
 				}
@@ -300,10 +388,15 @@
 					overflow:scroll;
 					max-height:300px;
 				}
+				.console-toolbar .cur{
+					background-color:black;
+					border-color:black;
+				}
+
 				.console-btn{
-					background-color: #dddddd;
-					color:#ffffff;
+					color:#dddddd;
 					margin-right:10px;
+					border:1px solid #dddddd;
 					padding:7px 15px;
 					border-radius:3px;
 					cursor: pointer;
@@ -568,11 +661,25 @@
 										}
 										else{
 											return function( e ){
-												var s = e.stack.match(/.*\n+/g),
-													i = s[ idx ].match(/\/{1}([^/].*)\)?/),
-													info = i[ i.length - 1 ].split('/'),
-													msg = info[ info.length - 1].split(':');
+												var s,
+													i,
+													info,
+													msg;
 
+												try{
+													s = e.stack.match(/.*\n+/g);
+													i = s[ idx ].match(/\/{1}([^/].*)\)?/);
+													info = i[ i.length - 1 ].split('/');
+													msg = info[ info.length - 1].split(':');
+												}catch(e){
+													return {
+														host: null,
+														route: null,
+														file: null,
+														row: null,
+														col: null
+													}
+												}
 												return {
 													host : info.shift(),
 													route : info.length > 1 ?info.join(''): '',
@@ -590,12 +697,28 @@
 							}
 							
 							function ret( e ){
-								var s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
+								var s,
+									index,
+									i,
+									info,
+									msg;
+
+								try{
+									s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
 									index = idx < s.length ? idx : idx - 1,
 									i = s[ index ].match(/\/{1}([^/].*)\)?/),
 									info = i[ i.length - 1 ].split('/'),
 									msg = info.pop().split(':');
-
+								}catch(e){
+									return {
+										host: null,
+										route: null,
+										file: null,
+										row: null,
+										col: null
+									}
+								}
+					
 								return {
 									host : info.shift(),
 									route : info.length > 1 ? (info.join('')): '',
