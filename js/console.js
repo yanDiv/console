@@ -6,18 +6,13 @@
 
 		oldConsole = global.console || undefined,
 		console,
-		outputHandle,
-		print = {},
 
-		hasOwn = print.hasOwnProperty,
-		
-		method = ['log','warn','info'],
-		
-		slice = method.slice,
-		defaultConfig = {},
+		hasOwn = {}.hasOwnProperty,
+		slice = [].slice,
 
 		StyleSheet = {},
-		Handler = {};
+		Handler = {},
+		Output = {};
 
 	//浅copy
 	function extend( dest,src ){
@@ -306,6 +301,194 @@
 		return StyleSheet;
 	})();
 
+	Output = (function(){
+		var Output;
+
+		Output = {
+			init: function( config ){
+
+				this.type = config.type;
+				this.config = config;
+
+				this._count = 0;
+				this._handleInfo = undefined;
+				this._method = ['log','info','warn'];
+
+				this.build();
+				return this;
+			},
+			build: function(){
+				var type = this.type;
+
+				type == 'console' ?
+					(function(){
+						var list = this._method,
+							len = list.length,
+							point,
+							isCall,
+							Fn,
+							self = this;
+
+						this._nativeConsole = oldConsole;
+						isCall = oldConsole.log.call || false;
+						Fn = Function;
+
+						while( len-- ){
+							(function(point){
+								point = list[ len ];
+								this[ point ] = function( message,force ){
+									var info = self.outputInfo();
+
+									info.message = message;
+									info.count = ++self._count;
+									self.output( point,info,force);
+								}
+							}).call(this,point);
+						};
+
+						this['output'] = function(key,info,force){
+							var method,
+								message;
+
+							if( !force ){
+								if( !this.config.debug ){
+									return this;
+								}
+							}
+
+							message = info.row === undefined || info.row === null ?
+								info.count + ':' + info.message :
+								info.count + ':' + info.message + '      (line:'+ info.row +',column:'+ info.col +')' + info.file;
+
+							method = this._nativeConsole[ key ];
+
+							isCall ?
+								method.call( this._nativeConsole,message ):
+								Function.prototype.call( method,this._nativeConsole,message ); 
+
+							return this;
+						}
+					}).call( this ) : 
+					(function(){
+						var list = this._method,
+							len = list.length,
+							point,
+							self = this;
+
+						while( len-- ){
+							point = list[ len ];
+							(function( point ){
+								this[ point ] = function( message,force ){
+									var info = self.outputInfo(),
+										config = self.config;
+
+									info.type = point;
+									info.message = message;
+									info.style = self.messageStyle();
+									info.namespace = config.namespace;
+									info.count = self._count;
+
+									self.output( point,info,force);
+								}
+							}).call( this,point );
+						};
+
+						this['messageStyle'] = function(){
+							return (( this._count++ ) % 2) == 0 ? 'odd' : 'even';
+						}
+
+						this['output'] = function( key,info,force ){
+
+							if( !force ){
+								if( !this.config.debug ){
+									return this;
+								}
+							}
+
+							Handler.print(info);
+
+							return this;
+						}
+					}).call( this );
+			},
+			outputInfo: function(){
+				var self = this,
+					outputHandle = this._handleInfo;
+
+				try{
+					throw new Error;
+				}
+				catch( e ){
+					if( outputHandle ){
+						return outputHandle( e );
+					}
+					return ( self._handleInfo = (function(){
+						var ua = global.navigator.userAgent;
+
+						return buildHandle(
+							/chrome/gi.test( ua ) && 'chrome' ||
+							/safari/gi.test( ua ) && 'safari' || 
+							/firefox/gi.test( ua ) && 'firefox' 
+						);
+
+						function buildHandle( tag ){
+							var idx;
+							switch( tag ){
+								case 'safari':
+									idx = 3;
+
+									return (function(){
+										var err = new Error();
+										
+										if( err.stack ){
+											return ret;
+										}
+										else{
+											return function( e ){
+												var s = e.stack.match(/.*\n+/g),
+													i = s[ idx ].match(/\/{1}([^/].*)\)?/),
+													info = i[ i.length - 1 ].split('/'),
+													msg = info[ info.length - 1].split(':');
+
+												return {
+													host : info.shift(),
+													route : info.length > 1 ?info.join(''): '',
+													file : msg[ 0 ],
+													row : msg[ 1 ],
+													col : msg[ 2 ]
+												}	
+											}
+										}	
+									})();
+								case 'firefox':
+								case 'chrome':
+									idx = 3;
+									return ret;					
+							}
+							
+							function ret( e ){
+								var s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
+									i = s[ idx ].match(/\/{1}([^/].*)\)?/),
+									info = i[ i.length - 1 ].split('/'),
+									msg = info.pop().split(':');
+
+								return {
+									host : info.shift(),
+									route : info.length > 1 ? (info.join('')): '',
+									file : msg[ 0 ],
+									row : msg[ 1 ],
+									col : msg[ 2 ]
+								}							
+							}
+						}
+					})())(e);
+				}
+			},
+		}
+
+		return Output;
+	})();
+
 	console = {
 		init: function( config ){
 			var defaultConfig = {
@@ -322,7 +505,6 @@
 			config.namespace += namespace ? '-' : '';
 			
 			this.config = config;
-			this._handleInfo = undefined;
 			this._count = 0;
 
 			StyleSheet.init({
@@ -332,6 +514,12 @@
 
 			Handler.init({
 				namespace: config.namespace
+			});
+
+			Output.init({
+				type: config.type,
+				namespace: config.namespace,
+				debug: config.debug
 			});
 
 			return this;
@@ -353,102 +541,17 @@
 
 			return pos;
 		},
-		outputInfo: function(){
-			var self = this,
-				outputHandle = this._handleInfo;
-
-			try{
-				throw new Error;
-			}
-			catch( e ){
-				if( outputHandle ){
-					return outputHandle( e );
-				}
-				return ( self._handleInfo = (function(){
-					var ua = global.navigator.userAgent;
-
-					return buildHandle(
-						/chrome/gi.test( ua ) && 'chrome' ||
-						/safari/gi.test( ua ) && 'safari' || 
-						/firefox/gi.test( ua ) && 'firefox' 
-					);
-
-					function buildHandle( tag ){
-						var idx;
-						switch( tag ){
-							case 'safari':
-								idx = 2;
-
-								return (function(){
-									var err = new Error();
-									
-									if( err.stack ){
-										return ret;
-									}
-									else{
-										return function( e ){
-											var s = e.stack.match(/.*\n+/g),
-												i = s[ idx ].match(/\/{1}([^/].*)\)?/),
-												info = i[ i.length - 1 ].split('/'),
-												msg = info[ info.length - 1].split(':');
-
-											return {
-												host : info.shift(),
-												route : info.length > 1 ?info.join(''): '',
-												file : msg[ 0 ],
-												row : msg[ 1 ],
-												col : msg[ 2 ]
-											}	
-										}
-									}	
-								})();
-							case 'firefox':
-							case 'chrome':
-								idx = 2;
-								return ret;					
-						}
-						
-						function ret( e ){
-							var s = e.stack.replace(/error/gi,'').match(/.+\n?/g),
-								i = s[ idx ].match(/\/{1}([^/].*)\)?/),
-								info = i[ i.length - 1 ].split('/'),
-								msg = info.pop().split(':');
-
-							return {
-								host : info.shift(),
-								route : info.length > 1 ? (info.join('')): '',
-								file : msg[ 0 ],
-								row : msg[ 1 ],
-								col : msg[ 2 ]
-							}							
-						}
-					}
-				})())(e);
-			}
+		log: function( message,force ){
+			Output.log( message,force );
+			return this;
 		},
-		messageStyle: function(){
-			return (( this._count++ ) % 2) == 0 ? 'odd' : 'even';
+		info: function( message,force ){
+			Output.info( message,force );
+
+			return this;
 		},
-		output: function( key,message,force ){
-			var info,
-				config;
-
-			if( !force ){
-				if( !this.config.debug ){
-					return this;
-				}
-			}
-
-			info = this.outputInfo();
-			config = this.config;
-			info.style = this.messageStyle();
-			info.count = this._count;
-			info.type = key;
-			info.message = message;
-			info.namespace = config.namespace;
-
-			Handler.print(info);
-
+		warn: function( message,force ){
+			Output.warn( message,force );
 			return this;
 		}
 	}
